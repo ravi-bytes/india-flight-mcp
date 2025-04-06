@@ -10,28 +10,11 @@ class CleartripProvider extends BaseProvider {
     }
 
     async searchFlights(from, to, departDate, returnDate = null) {
-        let browser;
-        let page;
+        let browser, page;
         
         try {
             console.log('Launching browser...');
-            browser = await puppeteer.launch({
-                headless: false,
-                defaultViewport: { width: 1280, height: 800 },
-                args: [
-                    '--start-maximized',
-                    '--disable-notifications',
-                    '--no-sandbox'
-                ]
-            });
-            
-            page = await browser.newPage();
-            
-            // Set a reasonable timeout
-            page.setDefaultTimeout(30000);
-            
-            // Enable console logging from the page
-            page.on('console', msg => console.log('Browser Console:', msg.text()));
+            ({ browser, page } = await this.initBrowser());
             
             console.log(`Navigating to ${this.baseUrl}`);
             await page.goto(`${this.baseUrl}/flights`, {
@@ -39,8 +22,8 @@ class CleartripProvider extends BaseProvider {
                 timeout: 60000
             });
             
-            // Log the current URL
             console.log('Current URL:', page.url());
+            await this.takeScreenshot(page, 'before-form');
             
             // Wait for and handle any cookie consent popup
             try {
@@ -56,9 +39,6 @@ class CleartripProvider extends BaseProvider {
             }
 
             console.log('Filling search form...');
-            
-            // Take a screenshot before filling the form
-            await page.screenshot({ path: 'before-form.png', fullPage: true });
             
             // Clear and fill origin
             console.log('Setting origin:', from);
@@ -91,23 +71,19 @@ class CleartripProvider extends BaseProvider {
                 await page.keyboard.press('Enter');
             }
             
-            // Take a screenshot after filling the form
-            await page.screenshot({ path: 'after-form.png', fullPage: true });
+            await this.takeScreenshot(page, 'after-form');
             
             console.log('Submitting search...');
             await page.click('[data-testid="search-button"]');
             
-            // Wait for results with a more reliable selector
+            // Wait for results
             console.log('Waiting for results...');
             await page.waitForSelector('[data-testid="flight-cards"]', {
-                timeout: 60000 // Increase timeout for flight results
+                timeout: 60000
             });
             
-            // Add a small delay to ensure all results are loaded
             await page.waitForTimeout(5000);
-            
-            // Take a screenshot of the results
-            await page.screenshot({ path: 'search-results.png', fullPage: true });
+            await this.takeScreenshot(page, 'search-results');
             
             console.log('Extracting flight information...');
             const flights = await page.evaluate(() => {
@@ -136,57 +112,28 @@ class CleartripProvider extends BaseProvider {
 
             console.log(`Found ${flights.length} flights`);
             
-            // In debug mode, keep the browser open for inspection
             if (this.debug) {
                 console.log('Debug mode: keeping browser open for inspection');
-                await page.waitForTimeout(30000); // Keep open for 30 seconds
+                await page.waitForTimeout(30000);
             }
             
             return flights;
             
         } catch (error) {
-            console.error(`Error searching flights on ${this.name}:`, error);
-            // Take a screenshot on error for debugging
-            if (page) {
-                try {
-                    await page.screenshot({
-                        path: `error-${this.name}-${Date.now()}.png`,
-                        fullPage: true
-                    });
-                } catch (screenshotError) {
-                    console.error('Failed to take error screenshot:', screenshotError);
-                }
-            }
-            return [];
+            return await this.handleError(error, page);
         } finally {
-            if (!this.debug && browser) {
-                console.log('Closing browser...');
-                await page.waitForTimeout(5000); // Wait 5 seconds before closing
-                await browser.close();
-            }
+            await this.closeBrowser(browser, page);
         }
     }
 
     async getOffers() {
-        let browser;
-        let page;
+        let browser, page;
         
         try {
             console.log('Launching browser...');
-            browser = await puppeteer.launch({
-                headless: false,
-                defaultViewport: { width: 1280, height: 800 },
-                args: [
-                    '--start-maximized',
-                    '--disable-notifications',
-                    '--no-sandbox'
-                ]
-            });
-            
-            page = await browser.newPage();
+            ({ browser, page } = await this.initBrowser());
             
             console.log(`Navigating to ${this.baseUrl}/offers`);
-            
             await page.goto(`${this.baseUrl}/offers`, {
                 waitUntil: 'networkidle0',
                 timeout: 60000
@@ -195,54 +142,30 @@ class CleartripProvider extends BaseProvider {
             await page.waitForSelector('.offerCard');
             
             const offers = await page.evaluate(() => {
-                const offerCards = document.querySelectorAll('.offerCard');
-                return Array.from(offerCards).map(card => {
-                    try {
-                        return {
-                            title: card.querySelector('.offer-title')?.textContent?.trim(),
-                            code: card.querySelector('.offer-code')?.textContent?.trim(),
-                            description: card.querySelector('.offer-description')?.textContent?.trim(),
-                            discountType: card.querySelector('.discount-type')?.textContent?.trim(),
-                            discountValue: card.querySelector('.discount-value')?.textContent?.trim(),
-                            bankName: card.querySelector('.bank-name')?.textContent?.trim()
-                        };
-                    } catch (error) {
-                        console.error('Error parsing offer card:', error);
-                        return null;
-                    }
-                }).filter(offer => offer !== null);
+                const offerElements = document.querySelectorAll('.offerCard');
+                return Array.from(offerElements).map(offer => ({
+                    title: offer.querySelector('.offerTitle')?.textContent?.trim(),
+                    code: offer.querySelector('.promoCode')?.textContent?.trim(),
+                    description: offer.querySelector('.offerDescription')?.textContent?.trim(),
+                    discountType: offer.querySelector('.discountType')?.textContent?.trim(),
+                    discountValue: offer.querySelector('.discountValue')?.textContent?.trim(),
+                    bankName: offer.querySelector('.bankName')?.textContent?.trim()
+                }));
             });
 
             console.log(`Found ${offers.length} offers`);
             
-            // In debug mode, keep the browser open for inspection
             if (this.debug) {
                 console.log('Debug mode: keeping browser open for inspection');
-                await page.waitForTimeout(30000); // Keep open for 30 seconds
+                await page.waitForTimeout(30000);
             }
             
             return offers;
             
         } catch (error) {
-            console.error(`Error fetching offers from ${this.name}:`, error);
-            // Take a screenshot on error for debugging
-            if (page) {
-                try {
-                    await page.screenshot({
-                        path: `error-${this.name}-${Date.now()}.png`,
-                        fullPage: true
-                    });
-                } catch (screenshotError) {
-                    console.error('Failed to take error screenshot:', screenshotError);
-                }
-            }
-            return [];
+            return await this.handleError(error, page);
         } finally {
-            if (!this.debug && browser) {
-                console.log('Closing browser...');
-                await page.waitForTimeout(5000); // Wait 5 seconds before closing
-                await browser.close();
-            }
+            await this.closeBrowser(browser, page);
         }
     }
 
