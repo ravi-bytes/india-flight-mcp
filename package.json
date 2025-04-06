@@ -1,0 +1,28 @@
+{
+  "name": "india-flight-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for searching flights across multiple Indian travel websites",
+  "main": "src/mcp/server.js",
+  "scripts": {
+    "start": "node src/mcp/server.js",
+    "dev": "nodemon src/mcp/server.js"
+  },
+  "keywords": [
+    "mcp",
+    "flights",
+    "india",
+    "travel"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer": "^21.0.0",
+    "dotenv": "^16.0.3",
+    "axios": "^1.8.4",
+    "moment": "^2.30.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
